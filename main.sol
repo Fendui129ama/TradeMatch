@@ -610,3 +610,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         return o.maker == requester;
     }
 
+    function canKeeperExpire(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        return o.maker != address(0) && !o.cancelled && o.filledWei < o.sizeWei && o.expireAtBlock > 0 && block.number >= o.expireAtBlock;
+    }
+
+    function getFillDetails(bytes32 orderId, uint256 fillWei) external view returns (
+        uint256 notionalWei,
+        uint256 feeWei,
+        uint256 makerReceiveWei,
+        uint256 takerReceiveWei,
+        uint256 takerMustSendWei
+    ) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) return (0, 0, 0, 0, 0);
+        notionalWei = (fillWei * o.priceTick) / TMM_BPS_DENOM;
+        feeWei = (notionalWei * feeBps) / TMM_BPS_DENOM;
+        if (o.buySide) {
+            makerReceiveWei = fillWei;
+            takerReceiveWei = notionalWei - feeWei;
+            takerMustSendWei = fillWei;
+        } else {
+            makerReceiveWei = notionalWei - feeWei;
+            takerReceiveWei = fillWei;
+            takerMustSendWei = notionalWei;
+        }
+    }
+
+    function getOrderSummary(bytes32 orderId) external view returns (
+        address maker,
+        bool buySide,
+        uint256 sizeWei,
+        uint256 filledWei,
+        uint256 remainingWei,
+        uint256 priceTick,
+        bool active
+    ) {
+        LimitOrder storage o = orders[orderId];
+        uint256 rem = o.sizeWei > o.filledWei ? o.sizeWei - o.filledWei : 0;
+        bool act = !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock);
+        return (o.maker, o.buySide, o.sizeWei, o.filledWei, rem, o.priceTick, act);
+    }
+
+    function getMakerOrdersSummary(address maker) external view returns (
+        uint256 totalOrders,
+        uint256 activeOrders,
+        uint256 totalSizeWei,
+        uint256 totalFilledWei
+    ) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        totalOrders = all.length;
+        for (uint256 i = 0; i < all.length; i++) {
+            LimitOrder storage o = orders[all[i]];
+            totalSizeWei += o.sizeWei;
+            totalFilledWei += o.filledWei;
+            if (!o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock)) activeOrders++;
+        }
+    }
+
+    function getTotalFeesAccumulated() external view returns (uint256 total) {
+        return _feeAccumulatedTreasury + _feeAccumulatedFeeVault;
+    }
+
+    function isMatchbookPaused() external view returns (bool) {
+        return matchbookPaused;
+    }
+
+    function getMinOrderSize() external view returns (uint256) {
+        return minOrderSizeWei;
