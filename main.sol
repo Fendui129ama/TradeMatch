@@ -1426,3 +1426,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         return orders[orderId].cancelled;
     }
 
+    function makerOf(bytes32 orderId) external view returns (address) {
+        return orders[orderId].maker;
+    }
+
+    function buySideOf(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].buySide;
+    }
+
+    function priceOf(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].priceTick;
+    }
+
+    function sizeOf(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].sizeWei;
+    }
+
+    function filledOf(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].filledWei;
+    }
+
+    function placedBlockOf(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].placedAtBlock;
+    }
+
+    function expireBlockOf(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].expireAtBlock;
+    }
+
+    function notionalOf(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        return (o.sizeWei * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function remainingOf(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return 0;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return 0;
+        return o.sizeWei - o.filledWei;
+    }
+
+    function remainingNotionalOf(bytes32 orderId) external view returns (uint256) {
+        uint256 rem = this.remainingOf(orderId);
+        if (rem == 0) return 0;
+        return (rem * orders[orderId].priceTick) / TMM_BPS_DENOM;
+    }
+
+    function bpsBase() external pure returns (uint256) { return TMM_BPS_DENOM; }
+    function maxFeeBpsLimit() external pure returns (uint256) { return TMM_MAX_FEE_BPS; }
+    function minPriceTickLimit() external pure returns (uint256) { return TMM_MIN_PRICE_TICK; }
+    function maxOrdersPerMakerLimit() external pure returns (uint256) { return TMM_MAX_ORDERS_PER_MAKER; }
+    function maxBatchMatchLimit() external pure returns (uint256) { return TMM_MAX_BATCH_MATCH; }
+    function ledgerSaltValue() external pure returns (uint256) { return TMM_LEDGER_SALT; }
+    function vaultTreasuryId() external pure returns (uint8) { return TMM_VAULT_TREASURY; }
+    function vaultFeeId() external pure returns (uint8) { return TMM_VAULT_FEE; }
+
+    function getOrderStateByte(bytes32 orderId) external view returns (uint8 state) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) return 0;
+        if (o.cancelled) return 1;
+        if (o.filledWei >= o.sizeWei) return 2;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return 3;
+        return 4;
+    }
+
+    function getOrdersStateByte(bytes32[] calldata orderIds) external view returns (uint8[] memory states) {
+        states = new uint8[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) states[i] = this.getOrderStatus(orderIds[i]);
+    }
