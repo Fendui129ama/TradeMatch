@@ -1154,3 +1154,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     }
 
     function isOrderActiveStatus(bytes32 orderId) external view returns (bool) {
+        return this.isOrderActive(orderId);
+    }
+
+    function getOrderViewStruct(bytes32 orderId) external view returns (OrderView memory) {
+        return this.getOrderView(orderId);
+    }
+
+    function setOrderExpiry(bytes32 orderId, uint256 expireAtBlock) external {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) revert TMM_OrderNotFound();
+        if (o.maker != msg.sender) revert TMM_NotMaker();
+        if (o.cancelled || o.filledWei >= o.sizeWei) revert TMM_OrderCancelled();
+        if (expireAtBlock > 0 && expireAtBlock <= block.number) revert TMM_ExpiryPast();
+        o.expireAtBlock = expireAtBlock;
+        emit OrderExpirySet(orderId, expireAtBlock, block.number);
+    }
+
+    function getOrderNotional(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        return (o.sizeWei * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function getOrderFilledNotional(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        return (o.filledWei * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function getOrderRemainingNotionalView(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        if (o.filledWei >= o.sizeWei) return 0;
+        uint256 rem = o.sizeWei - o.filledWei;
+        return (rem * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function getMakerTotalSize(address maker) external view returns (uint256 total) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        for (uint256 i = 0; i < all.length; i++) total += orders[all[i]].sizeWei;
+    }
+
+    function getMakerTotalFilled(address maker) external view returns (uint256 total) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        for (uint256 i = 0; i < all.length; i++) total += orders[all[i]].filledWei;
+    }
+
+    function getMakerActiveSize(address maker) external view returns (uint256 total) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        for (uint256 i = 0; i < all.length; i++) {
+            LimitOrder storage o = orders[all[i]];
+            if (!o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock))
+                total += (o.sizeWei - o.filledWei);
+        }
+    }
+
+    function getMakerActiveNotional(address maker) external view returns (uint256 total) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        for (uint256 i = 0; i < all.length; i++) {
+            LimitOrder storage o = orders[all[i]];
+            if (!o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock))
+                total += ((o.sizeWei - o.filledWei) * o.priceTick) / TMM_BPS_DENOM;
+        }
+    }
+
+    function getOrderFillPercentage(bytes32 orderId) external view returns (uint256 bps) {
+        LimitOrder storage o = orders[orderId];
+        if (o.sizeWei == 0) return 0;
+        return (o.filledWei * TMM_BPS_DENOM) / o.sizeWei;
+    }
+
