@@ -406,3 +406,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         return _orderId(maker_, buySide_, priceTick_, sizeWei_, seq_);
     }
 
+    function nextOrderSequence() external view returns (uint256) {
+        return orderSequence + 1;
+    }
+
+    function getLedgerDomain() external view returns (bytes32) {
+        return ledgerDomain;
+    }
+
+    struct OrderView {
+        bytes32 orderId;
+        address maker;
+        bool buySide;
+        uint256 priceTick;
+        uint256 sizeWei;
+        uint256 filledWei;
+        uint256 remainingWei;
+        uint256 placedAtBlock;
+        uint256 expireAtBlock;
+        bool cancelled;
+        bool active;
+    }
+
+    function getOrderView(bytes32 orderId) external view returns (OrderView memory v) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) return v;
+        v.orderId = orderId;
+        v.maker = o.maker;
+        v.buySide = o.buySide;
+        v.priceTick = o.priceTick;
+        v.sizeWei = o.sizeWei;
+        v.filledWei = o.filledWei;
+        v.remainingWei = o.sizeWei > o.filledWei ? o.sizeWei - o.filledWei : 0;
+        v.placedAtBlock = o.placedAtBlock;
+        v.expireAtBlock = o.expireAtBlock;
+        v.cancelled = o.cancelled;
+        v.active = !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock);
+    }
+
+    function getNotionalForFill(uint256 sizeWei, uint256 priceTick) external pure returns (uint256) {
+        return (sizeWei * priceTick) / TMM_BPS_DENOM;
+    }
+
+    function getFeeForNotional(uint256 notionalWei) external view returns (uint256) {
+        return (notionalWei * feeBps) / TMM_BPS_DENOM;
+    }
+
+    function getMakerOrderIdsPaginated(address maker, uint256 offset, uint256 limit) external view returns (bytes32[] memory ids) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        uint256 len = all.length;
+        if (offset >= len) return new bytes32[](0);
+        uint256 end = offset + limit;
+        if (end > len) end = len;
+        uint256 size = end - offset;
+        ids = new bytes32[](size);
+        for (uint256 i = 0; i < size; i++) ids[i] = all[offset + i];
+    }
+
+    function getOrderIdsBatch(bytes32[] calldata orderIds) external view returns (OrderView[] memory out) {
+        out = new OrderView[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) {
+            LimitOrder storage o = orders[orderIds[i]];
+            if (o.maker == address(0)) continue;
+            out[i] = OrderView({
+                orderId: orderIds[i],
+                maker: o.maker,
+                buySide: o.buySide,
+                priceTick: o.priceTick,
+                sizeWei: o.sizeWei,
