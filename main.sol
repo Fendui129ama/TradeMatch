@@ -1018,3 +1018,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
             act
         );
     }
+
+    function getMultipleOrdersRemaining(bytes32[] calldata orderIds) external view returns (uint256[] memory remainings) {
+        remainings = new uint256[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) {
+            LimitOrder storage o = orders[orderIds[i]];
+            if (o.maker != address(0) && !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock))
+                remainings[i] = o.sizeWei - o.filledWei;
+        }
+    }
+
+    function getMultipleOrdersActive(bytes32[] calldata orderIds) external view returns (bool[] memory actives) {
+        actives = new bool[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) {
+            LimitOrder storage o = orders[orderIds[i]];
+            actives[i] = !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock);
+        }
+    }
+
+    function getMultipleOrdersMaker(bytes32[] calldata orderIds) external view returns (address[] memory makers) {
+        makers = new address[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) makers[i] = orders[orderIds[i]].maker;
+    }
+
+    function getMultipleOrdersPriceTick(bytes32[] calldata orderIds) external view returns (uint256[] memory ticks) {
+        ticks = new uint256[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) ticks[i] = orders[orderIds[i]].priceTick;
+    }
+
+    function getMultipleOrdersSizeWei(bytes32[] calldata orderIds) external view returns (uint256[] memory sizes) {
+        sizes = new uint256[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) sizes[i] = orders[orderIds[i]].sizeWei;
+    }
+
+    function getMultipleOrdersFilledWei(bytes32[] calldata orderIds) external view returns (uint256[] memory filled) {
+        filled = new uint256[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) filled[i] = orders[orderIds[i]].filledWei;
+    }
+
+    function getMultipleOrdersBuySide(bytes32[] calldata orderIds) external view returns (bool[] memory buySides) {
+        buySides = new bool[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) buySides[i] = orders[orderIds[i]].buySide;
+    }
+
+    function getMultipleOrdersCancelled(bytes32[] calldata orderIds) external view returns (bool[] memory cancelled) {
+        cancelled = new bool[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) cancelled[i] = orders[orderIds[i]].cancelled;
+    }
+
+    function getMultipleOrdersExpireAtBlock(bytes32[] calldata orderIds) external view returns (uint256[] memory expireBlocks) {
+        expireBlocks = new uint256[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) expireBlocks[i] = orders[orderIds[i]].expireAtBlock;
+    }
+
+    function getMultipleOrdersPlacedAtBlock(bytes32[] calldata orderIds) external view returns (uint256[] memory placedBlocks) {
+        placedBlocks = new uint256[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) placedBlocks[i] = orders[orderIds[i]].placedAtBlock;
+    }
+
+    function computeRequiredWeiForPlace(bool buySideFlag, uint256 priceTickFlag, uint256 sizeWeiFlag) external pure returns (uint256) {
+        if (buySideFlag) return (sizeWeiFlag * priceTickFlag) / TMM_BPS_DENOM;
+        return sizeWeiFlag;
+    }
+
+    function computeRefundOnCancel(bytes32 orderId) external view returns (uint256 refundWei) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return 0;
+        uint256 remaining = o.sizeWei - o.filledWei;
+        return o.buySide ? (remaining * o.priceTick) / TMM_BPS_DENOM : remaining;
