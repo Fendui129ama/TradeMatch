@@ -1358,3 +1358,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         for (uint256 i = 0; i < ids.length; i++) {
             LimitOrder storage o = orders[ids[i]];
             filledNotional[i] = (o.filledWei * o.priceTick) / TMM_BPS_DENOM;
+        }
+    }
+
+    function getBatchOrderActive(bytes32[] calldata ids) external view returns (bool[] memory activeFlags) {
+        activeFlags = new bool[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) activeFlags[i] = this.isOrderActive(ids[i]);
+    }
+
+    function computeFeeForFill(bytes32 orderId, uint256 fillWeiVal) external view returns (uint256 fee) {
+        LimitOrder storage o = orders[orderId];
+        uint256 notional = (fillWeiVal * o.priceTick) / TMM_BPS_DENOM;
+        return (notional * feeBps) / TMM_BPS_DENOM;
+    }
+
+    function computeNotionalForSize(uint256 sizeWeiVal, uint256 priceTickVal) external pure returns (uint256) {
+        return (sizeWeiVal * priceTickVal) / TMM_BPS_DENOM;
+    }
+
+    function computeFeeFromNotional(uint256 notionalVal) external view returns (uint256) {
+        return (notionalVal * feeBps) / TMM_BPS_DENOM;
+    }
+
+    function validateSize(uint256 sizeWeiVal) external view returns (bool ok, uint8 code) {
+        if (sizeWeiVal < minOrderSizeWei) return (false, 1);
+        if (sizeWeiVal > maxOrderSizeWei) return (false, 2);
+        return (true, 0);
+    }
+
+    function validatePriceTick(uint256 priceTickVal) external pure returns (bool ok) {
+        return priceTickVal >= TMM_MIN_PRICE_TICK;
+    }
+
+    function getMakerFirstOrderId(address maker) external view returns (bytes32) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        return all.length > 0 ? all[0] : bytes32(0);
+    }
+
+    function getMakerLastOrderId(address maker) external view returns (bytes32) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        return all.length > 0 ? all[all.length - 1] : bytes32(0);
+    }
+
+    function getOrderByIdx(address maker, uint256 idx) external view returns (bytes32) {
+        return orderIdsByMaker[maker][idx];
+    }
+
+    function getOrderIdx(bytes32 orderId) external view returns (uint256) {
+        return orderIdIndexInMakerList[orderId];
+    }
+
+    function totalOrdersForMaker(address maker) external view returns (uint256) {
+        return orderIdsByMaker[maker].length;
+    }
+
+    function isExpired(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        return o.expireAtBlock > 0 && block.number >= o.expireAtBlock;
+    }
+
+    function isFilled(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        return o.maker != address(0) && o.filledWei >= o.sizeWei;
+    }
+
+    function isCancelled(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].cancelled;
+    }
+
