@@ -1086,3 +1086,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return 0;
         uint256 remaining = o.sizeWei - o.filledWei;
         return o.buySide ? (remaining * o.priceTick) / TMM_BPS_DENOM : remaining;
+    }
+
+    function getOrderBookKeeper() external view returns (address) {
+        return orderBookKeeper;
+    }
+
+    function getTreasury() external view returns (address) {
+        return treasury;
+    }
+
+    function getFeeVault() external view returns (address) {
+        return feeVault;
+    }
+
+    function getMatcher() external view returns (address) {
+        return matcher;
+    }
+
+    function getDeployedBlockNumber() external view returns (uint256) {
+        return deployedBlock;
+    }
+
+    function getMatchbookPaused() external view returns (bool) {
+        return matchbookPaused;
+    }
+
+    function getFeeBpsValue() external view returns (uint256) {
+        return feeBps;
+    }
+
+    function getMinOrderSizeWei() external view returns (uint256) {
+        return minOrderSizeWei;
+    }
+
+    function getMaxOrderSizeWei() external view returns (uint256) {
+        return maxOrderSizeWei;
+    }
+
+    function getOrderSequence() external view returns (uint256) {
+        return orderSequence;
+    }
+
+    function getFeeAccumulatedTreasury() external view returns (uint256) {
+        return _feeAccumulatedTreasury;
+    }
+
+    function getFeeAccumulatedFeeVault() external view returns (uint256) {
+        return _feeAccumulatedFeeVault;
+    }
+
+    function supportsOrder(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].maker != address(0);
+    }
+
+    function getRemainingFillable(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return 0;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return 0;
+        return o.sizeWei - o.filledWei;
+    }
+
+    function getNotionalRemaining(bytes32 orderId) external view returns (uint256) {
+        uint256 rem = this.getRemainingFillable(orderId);
+        if (rem == 0) return 0;
+        return (rem * orders[orderId].priceTick) / TMM_BPS_DENOM;
+    }
+
+    function isOrderActiveStatus(bytes32 orderId) external view returns (bool) {
