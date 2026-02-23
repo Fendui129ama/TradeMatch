@@ -270,3 +270,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     function matchOrder(
         bytes32 orderId,
         address taker,
+        uint256 fillWei
+    ) external payable whenNotPaused nonReentrant {
+        if (msg.sender != matcher) revert TMM_NotMatcher();
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) revert TMM_OrderNotFound();
+        if (o.cancelled || o.filledWei >= o.sizeWei) revert TMM_OrderCancelled();
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) revert TMM_OrderExpired();
+        if (fillWei == 0 || o.filledWei + fillWei > o.sizeWei) revert TMM_InvalidSize();
+
+        uint256 notional = (fillWei * o.priceTick) / TMM_BPS_DENOM;
+        uint256 feeAmount = (notional * feeBps) / TMM_BPS_DENOM;
+        uint256 halfFee = feeAmount / 2;
+        _feeAccumulatedTreasury += halfFee;
+        _feeAccumulatedFeeVault += (feeAmount - halfFee);
+
+        if (o.buySide) {
+            if (msg.value < fillWei) revert TMM_InsufficientValue();
+            uint256 makerReceiveBase = fillWei;
+            uint256 takerReceiveQuote = notional - feeAmount;
+            o.filledWei += fillWei;
+            (bool toMaker,) = o.maker.call{value: makerReceiveBase}("");
+            if (!toMaker) revert TMM_TransferFailed();
+            (bool toTaker,) = taker.call{value: takerReceiveQuote}("");
+            if (!toTaker) revert TMM_TransferFailed();
+            if (msg.value > fillWei) {
+                (bool refund,) = msg.sender.call{value: msg.value - fillWei}("");
+                if (!refund) revert TMM_TransferFailed();
+            }
+        } else {
+            if (msg.value < notional) revert TMM_InsufficientValue();
+            uint256 makerReceiveQuote = notional - feeAmount;
+            uint256 takerReceiveBase = fillWei;
+            o.filledWei += fillWei;
+            (bool toMaker,) = o.maker.call{value: makerReceiveQuote}("");
+            if (!toMaker) revert TMM_TransferFailed();
+            (bool toTaker,) = taker.call{value: takerReceiveBase}("");
+            if (!toTaker) revert TMM_TransferFailed();
+            if (msg.value > notional) {
+                (bool refund,) = msg.sender.call{value: msg.value - notional}("");
+                if (!refund) revert TMM_TransferFailed();
+            }
+        }
+
+        emit OrderFilled(orderId, o.maker, taker, o.buySide, o.priceTick, fillWei, o.buySide ? fillWei : notional - feeAmount, o.buySide ? notional - feeAmount : fillWei, feeAmount, block.number);
+        emit OrderPartiallyFilled(orderId, taker, fillWei, o.sizeWei - o.filledWei, block.number);
+    }
+
+    function matchOrderSimple(bytes32 orderId, address taker) external payable whenNotPaused nonReentrant {
+        LimitOrder storage o = orders[orderId];
+        uint256 remaining = o.sizeWei - o.filledWei;
+        if (remaining == 0) revert TMM_ZeroRemaining();
+        matchOrder(orderId, taker, remaining);
+    }
+
+    function sweepTreasuryFees() external nonReentrant {
+        if (msg.sender != treasury) revert TMM_NotMaker();
+        uint256 amount = _feeAccumulatedTreasury;
+        if (amount == 0) revert TMM_ZeroAmount();
+        _feeAccumulatedTreasury = 0;
+        (bool sent,) = treasury.call{value: amount}("");
+        if (!sent) revert TMM_TransferFailed();
+        emit FeeSwept(treasury, amount, TMM_VAULT_TREASURY, block.number);
+    }
+
+    function sweepFeeVaultFees() external nonReentrant {
+        if (msg.sender != feeVault) revert TMM_NotMaker();
+        uint256 amount = _feeAccumulatedFeeVault;
+        if (amount == 0) revert TMM_ZeroAmount();
