@@ -202,3 +202,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
             sizeWei: sizeWei,
             filledWei: 0,
             placedAtBlock: block.number,
+            expireAtBlock: 0,
+            cancelled: false
+        });
+        orderIdIndexInMakerList[orderId] = makerOrders.length;
+        makerOrders.push(orderId);
+        emit OrderPlaced(orderId, msg.sender, buySide, priceTick, sizeWei, block.number);
+        return orderId;
+    }
+
+    function placeOrderWithExpiry(bool buySide, uint256 priceTick, uint256 sizeWei, uint256 expireAtBlock) external payable whenNotPaused nonReentrant returns (bytes32 orderId) {
+        if (expireAtBlock <= block.number) revert TMM_ExpiryPast();
+        orderId = placeOrder(buySide, priceTick, sizeWei);
+        orders[orderId].expireAtBlock = expireAtBlock;
+        emit OrderExpirySet(orderId, expireAtBlock, block.number);
+        return orderId;
+    }
+
+    function cancelOrder(bytes32 orderId) external whenNotPaused nonReentrant {
+        _cancelOrder(orderId, msg.sender, true);
+    }
+
+    function _cancelOrder(bytes32 orderId, address requester, bool requireMaker) internal {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) revert TMM_OrderNotFound();
+        if (requireMaker && o.maker != requester) revert TMM_NotMaker();
+        if (o.cancelled) revert TMM_OrderCancelled();
+        if (o.filledWei >= o.sizeWei) revert TMM_OrderAlreadyFilled();
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) revert TMM_OrderExpired();
+
+        o.cancelled = true;
+        uint256 remaining = o.sizeWei - o.filledWei;
+        if (remaining > 0) {
+            uint256 refund = o.buySide ? (remaining * o.priceTick) / TMM_BPS_DENOM : remaining;
+            (bool sent,) = o.maker.call{value: refund}("");
+            if (!sent) revert TMM_TransferFailed();
+        }
+        emit OrderCancelled(orderId, o.maker, block.number);
+    }
+
+    function batchCancelOrders(bytes32[] calldata orderIds) external whenNotPaused nonReentrant {
+        if (orderIds.length > TMM_MAX_BATCH_MATCH) revert TMM_BatchTooLarge();
+        for (uint256 i = 0; i < orderIds.length; i++) {
+            LimitOrder storage o = orders[orderIds[i]];
+            if (o.maker == msg.sender && !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock))
+                _cancelOrder(orderIds[i], msg.sender, false);
+        }
+        emit BatchOrderCancelled(orderIds, msg.sender, block.number);
+    }
+
+    function keeperExpireOrder(bytes32 orderId) external nonReentrant {
+        if (msg.sender != orderBookKeeper) revert TMM_NotKeeper();
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) revert TMM_OrderNotFound();
+        if (o.cancelled || o.filledWei >= o.sizeWei) return;
+        if (o.expireAtBlock == 0 || block.number < o.expireAtBlock) revert TMM_OrderExpired();
+        o.cancelled = true;
+        uint256 remaining = o.sizeWei - o.filledWei;
+        if (remaining > 0) {
+            uint256 refund = o.buySide ? (remaining * o.priceTick) / TMM_BPS_DENOM : remaining;
+            (bool sent,) = o.maker.call{value: refund}("");
+            if (!sent) revert TMM_TransferFailed();
+        }
+        emit KeeperOrderExpired(orderId, o.maker, block.number);
+    }
+
+    function matchOrder(
+        bytes32 orderId,
+        address taker,
