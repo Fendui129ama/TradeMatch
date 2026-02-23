@@ -134,3 +134,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     }
 
     function setMatchbookPaused(bool paused) external onlyOwner {
+        matchbookPaused = paused;
+        emit MatchbookPauseToggled(paused);
+    }
+
+    function setMatcher(address newMatcher) external onlyOwner {
+        if (newMatcher == address(0)) revert TMM_ZeroAddress();
+        address prev = matcher;
+        matcher = newMatcher;
+        emit MatcherUpdated(prev, newMatcher);
+    }
+
+    function setFeeBps(uint256 newFeeBps) external onlyOwner {
+        if (newFeeBps > TMM_MAX_FEE_BPS) revert TMM_InvalidFeeBps();
+        uint256 prev = feeBps;
+        feeBps = newFeeBps;
+        emit FeeBpsUpdated(prev, newFeeBps, block.number);
+    }
+
+    function setMinOrderSizeWei(uint256 newMin) external onlyOwner {
+        uint256 prev = minOrderSizeWei;
+        minOrderSizeWei = newMin;
+        emit MinOrderSizeUpdated(prev, newMin, block.number);
+    }
+
+    function setMaxOrderSizeWei(uint256 newMax) external onlyOwner {
+        uint256 prev = maxOrderSizeWei;
+        maxOrderSizeWei = newMax;
+        emit MaxOrderSizeUpdated(prev, newMax, block.number);
+    }
+
+    function _orderId(address maker_, bool buySide_, uint256 priceTick_, uint256 sizeWei_, uint256 seq_) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(maker_, buySide_, priceTick_, sizeWei_, seq_));
+    }
+
+    function placeOrder(bool buySide, uint256 priceTick, uint256 sizeWei) external payable whenNotPaused nonReentrant returns (bytes32 orderId) {
+        if (msg.sender == address(0)) revert TMM_ZeroAddress();
+        if (priceTick < TMM_MIN_PRICE_TICK) revert TMM_InvalidPriceTick();
+        if (sizeWei < minOrderSizeWei) revert TMM_SizeBelowMin();
+        if (sizeWei > maxOrderSizeWei) revert TMM_SizeAboveMax();
+        bytes32[] storage makerOrders = orderIdsByMaker[msg.sender];
+        if (makerOrders.length >= TMM_MAX_ORDERS_PER_MAKER) revert TMM_InvalidSize();
+
+        if (buySide) {
+            uint256 cost = (sizeWei * priceTick) / TMM_BPS_DENOM;
+            if (msg.value < cost) revert TMM_InsufficientValue();
+            if (msg.value > cost) {
+                (bool sent,) = msg.sender.call{value: msg.value - cost}("");
+                if (!sent) revert TMM_TransferFailed();
+            }
+        } else {
+            if (msg.value < sizeWei) revert TMM_InsufficientValue();
+            if (msg.value > sizeWei) {
+                (bool sent,) = msg.sender.call{value: msg.value - sizeWei}("");
+                if (!sent) revert TMM_TransferFailed();
+            }
+        }
+
+        orderSequence++;
+        orderId = _orderId(msg.sender, buySide, priceTick, sizeWei, orderSequence);
+        if (orders[orderId].maker != address(0)) revert TMM_OrderNotFound();
+
+        orders[orderId] = LimitOrder({
+            maker: msg.sender,
+            buySide: buySide,
+            priceTick: priceTick,
+            sizeWei: sizeWei,
+            filledWei: 0,
+            placedAtBlock: block.number,
