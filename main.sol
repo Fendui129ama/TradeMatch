@@ -1222,3 +1222,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         return (o.filledWei * TMM_BPS_DENOM) / o.sizeWei;
     }
 
+    function getOrdersFillPercentage(bytes32[] calldata orderIds) external view returns (uint256[] memory bpsArray) {
+        bpsArray = new uint256[](orderIds.length);
+        for (uint256 i = 0; i < orderIds.length; i++) {
+            LimitOrder storage o = orders[orderIds[i]];
+            bpsArray[i] = o.sizeWei == 0 ? 0 : (o.filledWei * TMM_BPS_DENOM) / o.sizeWei;
+        }
+    }
+
+    function getOrderIdsForMakerFromTo(address maker, uint256 fromIdx, uint256 toIdx) external view returns (bytes32[] memory out) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        if (fromIdx > toIdx || toIdx >= all.length) return new bytes32[](0);
+        uint256 len = toIdx - fromIdx + 1;
+        out = new bytes32[](len);
+        for (uint256 i = 0; i < len; i++) out[i] = all[fromIdx + i];
+    }
+
+    function getOrderCountForMaker(address maker) external view returns (uint256) {
+        return orderIdsByMaker[maker].length;
+    }
+
+    function getOrderAt(bytes32 orderId) external view returns (
+        address makerAddr,
+        bool buySideFlag,
+        uint256 priceTickVal,
+        uint256 sizeWeiVal,
+        uint256 filledWeiVal,
+        uint256 placedBlockVal,
+        uint256 expireBlockVal,
+        bool cancelledFlag
+    ) {
+        LimitOrder storage o = orders[orderId];
+        return (o.maker, o.buySide, o.priceTick, o.sizeWei, o.filledWei, o.placedAtBlock, o.expireAtBlock, o.cancelled);
+    }
+
+    function getConstantsFull() external pure returns (
+        uint256 bpsDenomVal,
+        uint256 maxFeeBpsVal,
+        uint256 minPriceTickVal,
+        uint256 maxOrdersPerMakerVal,
+        uint256 ledgerSaltVal,
+        uint256 maxBatchMatchVal
+    ) {
+        return (TMM_BPS_DENOM, TMM_MAX_FEE_BPS, TMM_MIN_PRICE_TICK, TMM_MAX_ORDERS_PER_MAKER, TMM_LEDGER_SALT, TMM_MAX_BATCH_MATCH);
+    }
+
+    function getConfigFull() external view returns (
+        address treasuryAddr,
+        address feeVaultAddr,
+        address keeperAddr,
+        address matcherAddr,
+        uint256 feeBpsVal,
+        uint256 minOrderSizeVal,
+        uint256 maxOrderSizeVal,
+        uint256 deployedBlockVal,
+        bool pausedVal,
+        uint256 orderSeqVal
+    ) {
+        return (treasury, feeVault, orderBookKeeper, matcher, feeBps, minOrderSizeWei, maxOrderSizeWei, deployedBlock, matchbookPaused, orderSequence);
+    }
+
+    function checkOrderCanBeFilled(bytes32 orderId, uint256 fillAmount) external view returns (bool canFill, uint8 errCode) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) return (false, 1);
+        if (o.cancelled) return (false, 2);
+        if (o.filledWei + fillAmount > o.sizeWei) return (false, 3);
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return (false, 4);
+        if (fillAmount == 0) return (false, 5);
+        return (true, 0);
