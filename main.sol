@@ -746,3 +746,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     function treasuryPendingFees() external view returns (uint256) {
         return _feeAccumulatedTreasury;
     }
+
+    function feeVaultPendingFees() external view returns (uint256) {
+        return _feeAccumulatedFeeVault;
+    }
+
+    function ledgerSalt() external pure returns (uint256) {
+        return TMM_LEDGER_SALT;
+    }
+
+    function minPriceTick() external pure returns (uint256) {
+        return TMM_MIN_PRICE_TICK;
+    }
+
+    function maxBatchMatch() external pure returns (uint256) {
+        return TMM_MAX_BATCH_MATCH;
+    }
+
+    function vaultKindTreasury() external pure returns (uint8) {
+        return TMM_VAULT_TREASURY;
+    }
+
+    function vaultKindFee() external pure returns (uint8) {
+        return TMM_VAULT_FEE;
+    }
+
+    function getOrderViewCompact(bytes32 orderId) external view returns (
+        address maker,
+        bool buySide,
+        uint256 priceTick,
+        uint256 sizeWei,
+        uint256 filledWei,
+        bool cancelled,
+        bool expired,
+        bool active
+    ) {
+        LimitOrder storage o = orders[orderId];
+        bool exp = o.expireAtBlock > 0 && block.number >= o.expireAtBlock;
+        bool act = !o.cancelled && o.filledWei < o.sizeWei && !exp;
+        return (o.maker, o.buySide, o.priceTick, o.sizeWei, o.filledWei, o.cancelled, exp, act);
+    }
+
+    function getOrdersViewBatch(bytes32[] calldata orderIds) external view returns (
+        address[] memory makers,
+        bool[] memory buySides,
+        uint256[] memory priceTicks,
+        uint256[] memory sizeWeis,
+        uint256[] memory filledWeis,
+        bool[] memory actives
+    ) {
+        uint256 n = orderIds.length;
+        makers = new address[](n);
+        buySides = new bool[](n);
+        priceTicks = new uint256[](n);
+        sizeWeis = new uint256[](n);
+        filledWeis = new uint256[](n);
+        actives = new bool[](n);
+        for (uint256 i = 0; i < n; i++) {
+            LimitOrder storage o = orders[orderIds[i]];
+            makers[i] = o.maker;
+            buySides[i] = o.buySide;
+            priceTicks[i] = o.priceTick;
+            sizeWeis[i] = o.sizeWei;
+            filledWeis[i] = o.filledWei;
+            actives[i] = !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock);
+        }
+    }
+
+    function getRemainingSize(bytes32 orderId) external view returns (uint256) {
