@@ -542,3 +542,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
 
     function estimateFillCost(bytes32 orderId, uint256 fillWei) external view returns (uint256 weiRequired) {
         LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) return 0;
+        if (o.buySide) return fillWei;
+        return (fillWei * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function getConstants() external pure returns (
+        uint256 bpsDenom,
+        uint256 maxFeeBps,
+        uint256 minPriceTick,
+        uint256 maxOrdersPerMaker,
+        uint256 maxBatchMatch
+    ) {
+        return (TMM_BPS_DENOM, TMM_MAX_FEE_BPS, TMM_MIN_PRICE_TICK, TMM_MAX_ORDERS_PER_MAKER, TMM_MAX_BATCH_MATCH);
+    }
+
+    function getConfigSnapshot() external view returns (
+        address treasury_,
+        address feeVault_,
+        address keeper_,
+        address matcher_,
+        uint256 feeBps_,
+        uint256 minOrderSizeWei_,
+        uint256 maxOrderSizeWei_,
+        uint256 deployedBlock_,
+        bool paused_
+    ) {
+        return (treasury, feeVault, orderBookKeeper, matcher, feeBps, minOrderSizeWei, maxOrderSizeWei, deployedBlock, matchbookPaused);
+    }
+
+    function getActiveOrderIdsForMaker(address maker) external view returns (bytes32[] memory activeIds) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        uint256 count = 0;
+        for (uint256 i = 0; i < all.length; i++) {
+            LimitOrder storage o = orders[all[i]];
+            if (!o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock)) count++;
+        }
+        activeIds = new bytes32[](count);
+        count = 0;
+        for (uint256 i = 0; i < all.length; i++) {
+            LimitOrder storage o = orders[all[i]];
+            if (!o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock)) activeIds[count++] = all[i];
+        }
+    }
+
+    function getActiveOrderCountForMaker(address maker) external view returns (uint256) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        uint256 count = 0;
+        for (uint256 i = 0; i < all.length; i++) {
+            LimitOrder storage o = orders[all[i]];
+            if (!o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock)) count++;
+        }
+        return count;
+    }
+
+    function getOrderRemainingNotional(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return 0;
+        uint256 remaining = o.sizeWei - o.filledWei;
+        return (remaining * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function canCancelOrder(bytes32 orderId, address requester) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return false;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return false;
+        return o.maker == requester;
+    }
+
