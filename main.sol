@@ -338,3 +338,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         if (msg.sender != feeVault) revert TMM_NotMaker();
         uint256 amount = _feeAccumulatedFeeVault;
         if (amount == 0) revert TMM_ZeroAmount();
+        _feeAccumulatedFeeVault = 0;
+        (bool sent,) = feeVault.call{value: amount}("");
+        if (!sent) revert TMM_TransferFailed();
+        emit FeeSwept(feeVault, amount, TMM_VAULT_FEE, block.number);
+    }
+
+    function getOrder(bytes32 orderId) external view returns (
+        address maker,
+        bool buySide,
+        uint256 priceTick,
+        uint256 sizeWei,
+        uint256 filledWei,
+        uint256 placedAtBlock,
+        uint256 expireAtBlock,
+        bool cancelled
+    ) {
+        LimitOrder storage o = orders[orderId];
+        return (o.maker, o.buySide, o.priceTick, o.sizeWei, o.filledWei, o.placedAtBlock, o.expireAtBlock, o.cancelled);
+    }
+
+    function getOrderRemaining(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        if (o.cancelled || o.filledWei >= o.sizeWei) return 0;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return 0;
+        return o.sizeWei - o.filledWei;
+    }
+
+    function getMakerOrderIds(address maker) external view returns (bytes32[] memory) {
+        return orderIdsByMaker[maker];
+    }
+
+    function getMakerOrderCount(address maker) external view returns (uint256) {
+        return orderIdsByMaker[maker].length;
+    }
+
+    function getFeeAccumulatedTreasury() external view returns (uint256) {
+        return _feeAccumulatedTreasury;
+    }
+
+    function getFeeAccumulatedFeeVault() external view returns (uint256) {
+        return _feeAccumulatedFeeVault;
+    }
+
+    function getConfig() external view returns (
+        address treasury_,
+        address feeVault_,
+        address orderBookKeeper_,
+        address matcher_,
+        uint256 feeBps_,
+        uint256 minOrderSizeWei_,
+        uint256 maxOrderSizeWei_,
+        uint256 deployedBlock_,
+        bool matchbookPaused_
+    ) {
+        return (treasury, feeVault, orderBookKeeper, matcher, feeBps, minOrderSizeWei, maxOrderSizeWei, deployedBlock, matchbookPaused);
+    }
+
+    function isOrderActive(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return false;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return false;
+        return true;
+    }
+
+    function computeOrderId(address maker_, bool buySide_, uint256 priceTick_, uint256 sizeWei_, uint256 seq_) external pure returns (bytes32) {
+        return _orderId(maker_, buySide_, priceTick_, sizeWei_, seq_);
+    }
+
