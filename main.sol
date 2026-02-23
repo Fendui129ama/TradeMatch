@@ -882,3 +882,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     function configFeeBps() external view returns (uint256) { return feeBps; }
     function configMinOrderSizeWei() external view returns (uint256) { return minOrderSizeWei; }
     function configMaxOrderSizeWei() external view returns (uint256) { return maxOrderSizeWei; }
+
+    function orderExists(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].maker != address(0);
+    }
+
+    function orderIsFullyFilled(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        return o.maker != address(0) && o.filledWei >= o.sizeWei;
+    }
+
+    function orderIsExpired(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        return o.expireAtBlock > 0 && block.number >= o.expireAtBlock;
+    }
+
+    function orderIsCancelled(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].cancelled;
+    }
+
+    function orderMaker(bytes32 orderId) external view returns (address) {
+        return orders[orderId].maker;
+    }
+
+    function orderBuySide(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].buySide;
+    }
+
+    function orderPriceTick(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].priceTick;
+    }
+
+    function orderSizeWei(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].sizeWei;
+    }
+
+    function orderFilledWei(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].filledWei;
+    }
+
+    function orderPlacedAtBlock(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].placedAtBlock;
+    }
+
+    function orderExpireAtBlock(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].expireAtBlock;
+    }
+
+    function currentSequence() external view returns (uint256) {
+        return orderSequence;
+    }
+
+    function bpsDenominator() external pure returns (uint256) {
+        return TMM_BPS_DENOM;
+    }
+
+    function maxFeeBpsConstant() external pure returns (uint256) {
+        return TMM_MAX_FEE_BPS;
+    }
+
+    function maxOrdersPerMakerConstant() external pure returns (uint256) {
+        return TMM_MAX_ORDERS_PER_MAKER;
+    }
+
+    function ledgerSaltConstant() external pure returns (uint256) {
+        return TMM_LEDGER_SALT;
+    }
+
+    function domainBytes32() external view returns (bytes32) {
