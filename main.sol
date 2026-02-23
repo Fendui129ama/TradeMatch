@@ -1290,3 +1290,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
         if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return (false, 4);
         if (fillAmount == 0) return (false, 5);
         return (true, 0);
+    }
+
+    function getRequiredWeiToMatch(bytes32 orderId, uint256 fillWeiAmount) external view returns (uint256) {
+        return this.requiredValueToMatchOrder(orderId, fillWeiAmount);
+    }
+
+    function getRequiredWeiToPlace(bool buySideParam, uint256 priceTickParam, uint256 sizeWeiParam) external pure returns (uint256) {
+        return this.requiredValueToPlaceOrder(buySideParam, priceTickParam, sizeWeiParam);
+    }
+
+    function treasuryFeesAccumulated() external view returns (uint256) {
+        return _feeAccumulatedTreasury;
+    }
+
+    function feeVaultFeesAccumulated() external view returns (uint256) {
+        return _feeAccumulatedFeeVault;
+    }
+
+    function domainHash() external view returns (bytes32) {
+        return ledgerDomain;
+    }
+
+    function sequenceNumber() external view returns (uint256) {
+        return orderSequence;
+    }
+
+    function getOrderViewFlat(bytes32 orderId) external view returns (
+        bytes32 idOut,
+        address makerOut,
+        bool buyOut,
+        uint256 priceOut,
+        uint256 sizeOut,
+        uint256 filledOut,
+        uint256 remainingOut,
+        uint256 placedOut,
+        uint256 expireOut,
+        bool cancelledOut,
+        bool activeOut
+    ) {
+        LimitOrder storage o = orders[orderId];
+        uint256 rem = o.sizeWei > o.filledWei ? o.sizeWei - o.filledWei : 0;
+        bool act = !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock);
+        return (orderId, o.maker, o.buySide, o.priceTick, o.sizeWei, o.filledWei, rem, o.placedAtBlock, o.expireAtBlock, o.cancelled, act);
+    }
+
+    function getBatchOrderViews(bytes32[] calldata ids) external view returns (OrderView[] memory views) {
+        views = new OrderView[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) views[i] = this.getOrderView(ids[i]);
+    }
+
+    function getBatchOrderRemaining(bytes32[] calldata ids) external view returns (uint256[] memory rems) {
+        rems = new uint256[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) rems[i] = this.getOrderRemaining(ids[i]);
+    }
+
+    function getBatchOrderNotional(bytes32[] calldata ids) external view returns (uint256[] memory notional) {
+        notional = new uint256[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            LimitOrder storage o = orders[ids[i]];
+            notional[i] = (o.sizeWei * o.priceTick) / TMM_BPS_DENOM;
+        }
+    }
+
+    function getBatchOrderFilledNotional(bytes32[] calldata ids) external view returns (uint256[] memory filledNotional) {
+        filledNotional = new uint256[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            LimitOrder storage o = orders[ids[i]];
+            filledNotional[i] = (o.filledWei * o.priceTick) / TMM_BPS_DENOM;
