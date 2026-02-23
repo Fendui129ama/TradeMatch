@@ -474,3 +474,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
                 buySide: o.buySide,
                 priceTick: o.priceTick,
                 sizeWei: o.sizeWei,
+                filledWei: o.filledWei,
+                remainingWei: o.sizeWei > o.filledWei ? o.sizeWei - o.filledWei : 0,
+                placedAtBlock: o.placedAtBlock,
+                expireAtBlock: o.expireAtBlock,
+                cancelled: o.cancelled,
+                active: !o.cancelled && o.filledWei < o.sizeWei && (o.expireAtBlock == 0 || block.number < o.expireAtBlock)
+            });
+        }
+    }
+
+    function getTreasuryAddress() external view returns (address) { return treasury; }
+    function getFeeVaultAddress() external view returns (address) { return feeVault; }
+    function getOrderBookKeeperAddress() external view returns (address) { return orderBookKeeper; }
+    function getMatcherAddress() external view returns (address) { return matcher; }
+    function getDeployedBlock() external view returns (uint256) { return deployedBlock; }
+    function getBpsDenom() external pure returns (uint256) { return TMM_BPS_DENOM; }
+    function getMaxFeeBps() external pure returns (uint256) { return TMM_MAX_FEE_BPS; }
+    function getMaxOrdersPerMaker() external pure returns (uint256) { return TMM_MAX_ORDERS_PER_MAKER; }
+    function getLedgerSalt() external pure returns (uint256) { return TMM_LEDGER_SALT; }
+
+    function isOrderFilled(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        return o.maker != address(0) && o.filledWei >= o.sizeWei;
+    }
+
+    function isOrderExpired(bytes32 orderId) external view returns (bool) {
+        LimitOrder storage o = orders[orderId];
+        return o.expireAtBlock > 0 && block.number >= o.expireAtBlock;
+    }
+
+    function getOrderMaker(bytes32 orderId) external view returns (address) {
+        return orders[orderId].maker;
+    }
+
+    function getOrderBuySide(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].buySide;
+    }
+
+    function getOrderPriceTick(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].priceTick;
+    }
+
+    function getOrderSizeWei(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].sizeWei;
+    }
+
+    function getOrderFilledWei(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].filledWei;
+    }
+
+    function getOrderPlacedAtBlock(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].placedAtBlock;
+    }
+
+    function getOrderExpireAtBlock(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].expireAtBlock;
+    }
+
+    function getOrderCancelled(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].cancelled;
+    }
+
+    function totalOrderSequence() external view returns (uint256) {
+        return orderSequence;
+    }
+
+    function estimateFillCost(bytes32 orderId, uint256 fillWei) external view returns (uint256 weiRequired) {
+        LimitOrder storage o = orders[orderId];
