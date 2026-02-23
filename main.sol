@@ -678,3 +678,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
 
     function getMinOrderSize() external view returns (uint256) {
         return minOrderSizeWei;
+    }
+
+    function getMaxOrderSize() external view returns (uint256) {
+        return maxOrderSizeWei;
+    }
+
+    function getFeeBps() external view returns (uint256) {
+        return feeBps;
+    }
+
+    function computeNotional(uint256 sizeWei, uint256 priceTick) external pure returns (uint256) {
+        return (sizeWei * priceTick) / TMM_BPS_DENOM;
+    }
+
+    function computeFeeFromNotional(uint256 notionalWei) external view returns (uint256) {
+        return (notionalWei * feeBps) / TMM_BPS_DENOM;
+    }
+
+    function validateOrderParams(bool buySide, uint256 priceTick, uint256 sizeWei) external view returns (bool valid, uint8 reason) {
+        if (priceTick < TMM_MIN_PRICE_TICK) return (false, 1);
+        if (sizeWei < minOrderSizeWei) return (false, 2);
+        if (sizeWei > maxOrderSizeWei) return (false, 3);
+        return (true, 0);
+    }
+
+    function getOrderIdAtIndex(address maker, uint256 index) external view returns (bytes32) {
+        return orderIdsByMaker[maker][index];
+    }
+
+    function getOrderIndexInMakerList(bytes32 orderId) external view returns (uint256) {
+        return orderIdIndexInMakerList[orderId];
+    }
+
+    function hasOrder(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].maker != address(0);
+    }
+
+    function getOrderPlacedBlock(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].placedAtBlock;
+    }
+
+    function getOrderExpiryBlock(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].expireAtBlock;
+    }
+
+    function getOrderIsCancelled(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].cancelled;
+    }
+
+    function getOrderFilledAmount(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].filledWei;
+    }
+
+    function getOrderSize(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].sizeWei;
+    }
+
+    function getOrderPrice(bytes32 orderId) external view returns (uint256) {
+        return orders[orderId].priceTick;
+    }
+
+    function getOrderIsBuy(bytes32 orderId) external view returns (bool) {
+        return orders[orderId].buySide;
+    }
+
+    function treasuryPendingFees() external view returns (uint256) {
+        return _feeAccumulatedTreasury;
+    }
