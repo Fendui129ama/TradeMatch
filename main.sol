@@ -814,3 +814,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     }
 
     function getRemainingSize(bytes32 orderId) external view returns (uint256) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0) || o.cancelled || o.filledWei >= o.sizeWei) return 0;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return 0;
+        return o.sizeWei - o.filledWei;
+    }
+
+    function getRemainingNotional(bytes32 orderId) external view returns (uint256) {
+        uint256 rem = this.getRemainingSize(orderId);
+        if (rem == 0) return 0;
+        LimitOrder storage o = orders[orderId];
+        return (rem * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function estimateFeeForOrder(bytes32 orderId, uint256 fillWei) external view returns (uint256 feeWei) {
+        LimitOrder storage o = orders[orderId];
+        uint256 notional = (fillWei * o.priceTick) / TMM_BPS_DENOM;
+        return (notional * feeBps) / TMM_BPS_DENOM;
+    }
+
+    function getMakerOrderIdsRange(address maker, uint256 fromIndex, uint256 toIndex) external view returns (bytes32[] memory ids) {
+        bytes32[] storage all = orderIdsByMaker[maker];
+        if (fromIndex > toIndex || toIndex >= all.length) return new bytes32[](0);
+        uint256 size = toIndex - fromIndex + 1;
+        ids = new bytes32[](size);
+        for (uint256 i = 0; i < size; i++) ids[i] = all[fromIndex + i];
+    }
+
+    function getOrderStatus(bytes32 orderId) external view returns (uint8 status) {
+        LimitOrder storage o = orders[orderId];
+        if (o.maker == address(0)) return 0;
+        if (o.cancelled) return 1;
+        if (o.filledWei >= o.sizeWei) return 2;
+        if (o.expireAtBlock > 0 && block.number >= o.expireAtBlock) return 3;
+        return 4;
+    }
+
+    function getOrderInfo(bytes32 orderId) external view returns (
+        bytes32 id,
+        address makerAddr,
+        bool isBuy,
+        uint256 price,
+        uint256 size,
+        uint256 filled,
+        uint256 placedBlock,
+        uint256 expireBlock,
+        bool cancelledFlag
+    ) {
+        LimitOrder storage o = orders[orderId];
+        return (orderId, o.maker, o.buySide, o.priceTick, o.sizeWei, o.filledWei, o.placedAtBlock, o.expireAtBlock, o.cancelled);
+    }
+
+    function totalFeesTreasury() external view returns (uint256) {
+        return _feeAccumulatedTreasury;
+    }
+
+    function totalFeesFeeVault() external view returns (uint256) {
+        return _feeAccumulatedFeeVault;
+    }
+
+    function configTreasury() external view returns (address) { return treasury; }
+    function configFeeVault() external view returns (address) { return feeVault; }
+    function configKeeper() external view returns (address) { return orderBookKeeper; }
+    function configMatcher() external view returns (address) { return matcher; }
+    function configDeployedBlock() external view returns (uint256) { return deployedBlock; }
+    function configPaused() external view returns (bool) { return matchbookPaused; }
+    function configFeeBps() external view returns (uint256) { return feeBps; }
+    function configMinOrderSizeWei() external view returns (uint256) { return minOrderSizeWei; }
+    function configMaxOrderSizeWei() external view returns (uint256) { return maxOrderSizeWei; }
