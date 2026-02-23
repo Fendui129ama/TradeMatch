@@ -66,3 +66,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     error TMM_InvalidFeeBps();
     error TMM_TransferFailed();
     error TMM_Reentrancy();
+    error TMM_NoMatch();
+    error TMM_InsufficientValue();
+    error TMM_PriceMismatch();
+    error TMM_SideMismatch();
+    error TMM_ZeroRemaining();
+    error TMM_ExpiryPast();
+    error TMM_ArrayLengthMismatch();
+    error TMM_BatchTooLarge();
+    error TMM_NotKeeper();
+
+    uint256 public constant TMM_BPS_DENOM = 10000;
+    uint256 public constant TMM_MAX_FEE_BPS = 500;
+    uint256 public constant TMM_MIN_PRICE_TICK = 1;
+    uint256 public constant TMM_MAX_ORDERS_PER_MAKER = 256;
+    uint256 public constant TMM_LEDGER_SALT = 0x6D3fA8c1E5b0D4e7F2a9C6d1B8e4A0c7D3f6B9e2;
+    uint256 public constant TMM_MAX_BATCH_MATCH = 32;
+    uint8 public constant TMM_VAULT_TREASURY = 1;
+    uint8 public constant TMM_VAULT_FEE = 2;
+
+    address public immutable treasury;
+    address public immutable feeVault;
+    address public immutable orderBookKeeper;
+    uint256 public immutable deployedBlock;
+    bytes32 public immutable ledgerDomain;
+
+    address public matcher;
+    uint256 public feeBps;
+    uint256 public minOrderSizeWei;
+    uint256 public maxOrderSizeWei;
+    bool public matchbookPaused;
+    uint256 public orderSequence;
+
+    struct LimitOrder {
+        address maker;
+        bool buySide;
+        uint256 priceTick;
+        uint256 sizeWei;
+        uint256 filledWei;
+        uint256 placedAtBlock;
+        uint256 expireAtBlock;
+        bool cancelled;
+    }
+
+    mapping(bytes32 => LimitOrder) public orders;
+    mapping(address => bytes32[]) public orderIdsByMaker;
+    mapping(bytes32 => uint256) public orderIdIndexInMakerList;
+
+    uint256 private _feeAccumulatedTreasury;
+    uint256 private _feeAccumulatedFeeVault;
+
+    modifier whenNotPaused() {
+        if (matchbookPaused) revert TMM_MatchbookPaused();
+        _;
+    }
+
+    constructor() {
+        treasury = address(0x5B2d8F1a4E9c7A0b3D6f8C1e5A9d2F4b7E0c3a6);
+        feeVault = address(0xE1a7C4d0F3b6E9c2A5d8F1b4E7a0C3d6F9e2B5);
+        orderBookKeeper = address(0x9C0e3F6a2D5b8E1c4A7d0F3b6E9a2C5d8F1b4e7);
+        deployedBlock = block.number;
+        ledgerDomain = keccak256(abi.encodePacked("TradeMatch_", block.chainid, block.prevrandao, TMM_LEDGER_SALT));
+        matcher = msg.sender;
+        feeBps = 25;
+        minOrderSizeWei = 0.001 ether;
+        maxOrderSizeWei = 1000 ether;
+    }
+
+    function setMatchbookPaused(bool paused) external onlyOwner {
