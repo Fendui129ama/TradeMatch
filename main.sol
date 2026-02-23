@@ -950,3 +950,71 @@ contract TradeMatch is ReentrancyGuard, Ownable {
     }
 
     function domainBytes32() external view returns (bytes32) {
+        return ledgerDomain;
+    }
+
+    function computeOrderIdFromParams(
+        address makerAddr,
+        bool buySideParam,
+        uint256 priceTickParam,
+        uint256 sizeWeiParam,
+        uint256 seqParam
+    ) external pure returns (bytes32) {
+        return _orderId(makerAddr, buySideParam, priceTickParam, sizeWeiParam, seqParam);
+    }
+
+    function requiredValueToPlaceOrder(bool buySideParam, uint256 priceTickParam, uint256 sizeWeiParam) external pure returns (uint256) {
+        if (buySideParam) return (sizeWeiParam * priceTickParam) / TMM_BPS_DENOM;
+        return sizeWeiParam;
+    }
+
+    function requiredValueToMatchOrder(bytes32 orderIdParam, uint256 fillWeiParam) external view returns (uint256) {
+        LimitOrder storage o = orders[orderIdParam];
+        if (o.maker == address(0)) return 0;
+        if (o.buySide) return fillWeiParam;
+        return (fillWeiParam * o.priceTick) / TMM_BPS_DENOM;
+    }
+
+    function getFeeSplit(uint256 notionalWeiParam) external view returns (uint256 toTreasury, uint256 toFeeVault) {
+        uint256 fee = (notionalWeiParam * feeBps) / TMM_BPS_DENOM;
+        toTreasury = fee / 2;
+        toFeeVault = fee - toTreasury;
+    }
+
+    function getOrderRemainingWei(bytes32 orderId) external view returns (uint256) {
+        return this.getOrderRemaining(orderId);
+    }
+
+    function getFullOrderState(bytes32 orderId) external view returns (
+        bytes32 id,
+        address makerAddress,
+        bool isBuyOrder,
+        uint256 priceTickValue,
+        uint256 sizeWeiValue,
+        uint256 filledWeiValue,
+        uint256 remainingWeiValue,
+        uint256 placedAtBlockValue,
+        uint256 expireAtBlockValue,
+        bool isCancelled,
+        bool isExpired,
+        bool isActive
+    ) {
+        LimitOrder storage o = orders[orderId];
+        uint256 rem = o.sizeWei > o.filledWei ? o.sizeWei - o.filledWei : 0;
+        bool exp = o.expireAtBlock > 0 && block.number >= o.expireAtBlock;
+        bool act = !o.cancelled && o.filledWei < o.sizeWei && !exp;
+        return (
+            orderId,
+            o.maker,
+            o.buySide,
+            o.priceTick,
+            o.sizeWei,
+            o.filledWei,
+            rem,
+            o.placedAtBlock,
+            o.expireAtBlock,
+            o.cancelled,
+            exp,
+            act
+        );
+    }
